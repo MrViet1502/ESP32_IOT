@@ -192,108 +192,6 @@
 // }
 //==================================// gửi nhiệt độ độ ẩm lên web
 
-// #include <WiFi.h>
-// #include <PubSubClient.h> // MQTT Client
-// #include <Wire.h>
-// #include "DHT20.h" // Thư viện DHT20
-
-// // Wi-Fi Credentials
-// const char *ssid = "viet";
-// const char *password = "20252025";
-
-// // ThingsBoard MQTT Broker
-// const char *mqttServer = "app.coreiot.io";
-// const int mqttPort = 1883;
-// const char *ACCESS_TOKEN = "gB69jhkhOWD1wEYj6mm7"; // Thay bằng token thiết bị của bạn
-
-// WiFiClient espClient;
-// PubSubClient client(espClient);
-// DHT20 dht20;
-// float temperature = 30;
-// float humidity = 50;
-// // **Kết nối WiFi**
-// void connectWiFi()
-// {
-//     Serial.print("Connecting to WiFi...");
-//     WiFi.begin(ssid, password);
-//     while (WiFi.status() != WL_CONNECTED)
-//     {
-//         Serial.print(".");
-//         delay(1000);
-//     }
-//     Serial.println("\nWiFi connected: " + WiFi.localIP().toString());
-// }
-
-// // **Kết nối MQTT đến ThingsBoard**
-// void reconnectMQTT()
-// {
-//     while (!client.connected())
-//     {
-//         Serial.print("Connecting to MQTT...");
-//         if (client.connect("ESP32_S3", ACCESS_TOKEN, ""))
-//         {
-//             Serial.println("Connected to ThingsBoard!");
-//         }
-//         else
-//         {
-//             Serial.print("Failed, rc=");
-//             Serial.print(client.state());
-//             Serial.println(" retrying in 5 seconds...");
-//             delay(5000);
-//         }
-//     }
-// }
-
-// // **Gửi dữ liệu cảm biến lên ThingsBoard**
-// void sendTelemetry()
-// {
-//     if (!dht20.read())
-//     { // Đọc dữ liệu từ DHT20
-//         float temperature = dht20.getTemperature();
-//         float humidity = dht20.getHumidity();
-
-//         // **Tạo JSON**
-//         String payload = "{\"temperature\":" + String(temperature) + ",\"humidity\":" + String(humidity) + "}";
-
-//         // **Kiểm tra kết nối trước khi gửi**
-//         if (client.connected())
-//         {
-//             client.publish("v1/devices/me/telemetry", payload.c_str());
-//             Serial.println("Sent telemetry: " + payload);
-//         }
-//         else
-//         {
-//             Serial.println("MQTT not connected, cannot send data!");
-//         }
-//     }
-//     else
-//     {
-//         Serial.println("Failed to read DHT20 sensor!");
-//     }
-// }
-
-// void setup()
-// {
-//     Serial.begin(115200);
-//     Wire.begin();
-//     dht20.begin();
-
-//     connectWiFi();
-//     client.setServer(mqttServer, mqttPort);
-// }
-
-// void loop()
-// {
-//     if (!client.connected())
-//     {
-//         reconnectMQTT();
-//     }
-//     client.loop();
-
-//     sendTelemetry(); // Gửi dữ liệu cảm biến mỗi 5 giây
-//     delay(3000);
-// }
-
 //=================================//
 // Bat tat LED va gui dataa len coreIOT thanh cong
 // #include <WiFi.h>
@@ -434,7 +332,7 @@
 //     dht20.begin();
 
 //     pinMode(LED_PIN, OUTPUT);
-//     digitalWrite(LED_PIN, LOW);
+//     digitalWrite(LED_PIN, HIGH);
 
 //     connectWiFi();
 //     client.setServer(mqttServer, mqttPort);
@@ -447,8 +345,7 @@
 //     {
 //         reconnectMQTT();
 //     }
-//     client.loop(); // Xử lý MQTT ngay lập tức
-
+//     client.loop();   // Xử lý MQTT ngay lập tức
 //     sendTelemetry(); // Gửi dữ liệu cảm biến theo thời gian mà không delay
 // }
 
