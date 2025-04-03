@@ -1,5 +1,200 @@
+// Code freeRTOS connect WiFi, MQTT và gửi dữ liệu lên ThingsBoard
 
-// // Import required libraries
+#include <WiFi.h>
+#include <Wire.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include "DHT20.h"
+
+// WiFi Credentials
+const char *ssid = "viet";
+const char *password = "20252025";
+
+// ThingsBoard MQTT Broker
+const char *mqttServer = "app.coreiot.io";
+const int mqttPort = 1883;
+const char *ACCESS_TOKEN = "gB69jhkhOWD1wEYj6mm7";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// Cảm biến
+DHT20 dht20;
+#define MQ2_AO_PIN 34 //
+
+// Thời gian gửi
+const long telemetryInterval = 5000;
+const long mq2Interval = 5000;
+SemaphoreHandle_t i2cMutex;
+// Task handles
+TaskHandle_t WiFiTaskHandle = NULL;
+TaskHandle_t MQTTaskHandle = NULL;
+TaskHandle_t MQ2TaskHandle = NULL;
+TaskHandle_t TelemetryTaskHandle = NULL;
+
+//  WiFi Task: Kiểm tra reconnect nếu rớt mạng
+void checkWiFiTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (WiFi.status() != WL_CONNECTED)
+        {
+            Serial.println(" WiFi disconnected! Reconnecting...");
+            WiFi.begin(ssid, password);
+
+            unsigned long start = millis();
+            while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
+            {
+                delay(500);
+                Serial.print(".");
+            }
+
+            if (WiFi.status() == WL_CONNECTED)
+            {
+                Serial.print("\n WiFi connected: ");
+                Serial.println(WiFi.localIP());
+            }
+            else
+            {
+                Serial.println("\n WiFi reconnect failed.");
+            }
+        }
+        else
+        {
+            Serial.println(" WiFi OK");
+        }
+
+        vTaskDelay(10000 / portTICK_PERIOD_MS); // Kiểm tra mỗi 10 giây
+    }
+}
+
+//  MQTT Task
+void reconnectMQTT()
+{
+    while (!client.connected())
+    {
+        Serial.print(" Connecting to MQTT...");
+        if (client.connect("ESP32", ACCESS_TOKEN, ""))
+        {
+            Serial.println(" MQTT Connected to ThingsBoard");
+        }
+        else
+        {
+            Serial.print(" Failed, rc=");
+            Serial.print(client.state());
+            Serial.println(" → retry in 5s");
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
+        }
+    }
+}
+
+void MQTTask(void *pvParameters)
+{
+    for (;;)
+    {
+        if (!client.connected())
+        {
+            reconnectMQTT();
+        }
+        client.loop();
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
+}
+
+// 🌡 Task gửi DHT20 telemetry
+void sendTelemetry(void *pvParameters)
+{
+    dht20.begin();
+
+    for (;;)
+    {
+        if (WiFi.status() == WL_CONNECTED && client.connected())
+        {
+            //  Lấy quyền truy cập I2C
+            if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
+                bool ok = dht20.read();
+                if (!ok)
+                {
+                    float temp = dht20.getTemperature();
+                    float hum = dht20.getHumidity();
+
+                    StaticJsonDocument<128> doc;
+                    doc["temperature"] = temp;
+                    doc["humidity"] = hum;
+
+                    char buffer[128];
+                    serializeJson(doc, buffer);
+
+                    client.publish("v1/devices/me/telemetry", buffer);
+                    Serial.println(" Sent DHT20: " + String(buffer));
+                }
+                else
+                {
+                    Serial.println(" DHT20 read failed");
+                }
+
+                //  Trả quyền lại
+                xSemaphoreGive(i2cMutex);
+            }
+            else
+            {
+                Serial.println(" I2C busy, skip DHT20 read");
+            }
+        }
+
+        vTaskDelay(telemetryInterval / portTICK_PERIOD_MS);
+    }
+}
+
+//  Task gửi MQ2 telemetry
+void sendMQ2Data(void *pvParameters)
+{
+    for (;;)
+    {
+        if (WiFi.status() == WL_CONNECTED && client.connected())
+        {
+            int mq2Value = analogRead(MQ2_AO_PIN);
+            StaticJsonDocument<128> doc;
+            doc["mq2_analog"] = mq2Value;
+
+            char buffer[128];
+            serializeJson(doc, buffer);
+            client.publish("v1/devices/me/telemetry", buffer);
+
+            Serial.println(" Sent MQ2: " + String(buffer));
+        }
+
+        vTaskDelay(mq2Interval / portTICK_PERIOD_MS);
+    }
+}
+
+//  setup()
+void setup()
+{
+    Serial.begin(115200);
+    delay(1000);
+    Wire.begin();
+    i2cMutex = xSemaphoreCreateMutex();
+    pinMode(MQ2_AO_PIN, INPUT);
+    WiFi.begin(ssid, password);
+    client.setServer(mqttServer, mqttPort);
+
+    //  Tạo task FreeRTOS
+    xTaskCreate(checkWiFiTask, "WiFiTask", 4096, NULL, 1, &WiFiTaskHandle);
+    xTaskCreate(MQTTask, "MQTTask", 4096, NULL, 1, &MQTTaskHandle);
+    xTaskCreate(sendTelemetry, "TelemetryTask", 4096, NULL, 1, &TelemetryTaskHandle);
+    xTaskCreate(sendMQ2Data, "MQ2Task", 4096, NULL, 1, &MQ2TaskHandle);
+}
+
+// loop bỏ trống
+void loop() {}
+//=================================//
+
+//=================================//
+// Code sent data from sensor to coreIOT
 // #include "WiFi.h"
 // #include "ESPAsyncWebServer.h"
 // #include "SPIFFS.h"
@@ -95,105 +290,8 @@
 //     delay(5000);
 // }
 
-//============================// led
-// // Set LED GPIO
-// const int ledPin = 18;
-// // Stores LED state
-// String ledState;
-
-// // Create AsyncWebServer object on port 80
-// AsyncWebServer server(80);
-
-// // Replaces placeholder with LED state value
-// String processor(const String& var){
-//   Serial.println(var);
-//   if(var == "STATE"){
-//     if(digitalRead(ledPin)){
-//       ledState = "ON";
-//     }
-//     else{
-//       ledState = "OFF";
-//     }
-//     Serial.print(ledState);
-//     return ledState;
-//   }
-//   return String();
-// }
-
-// // Task to handle Wi-Fi connection
-// void wifiTask(void *pvParameters) {
-//   Serial.begin(115200);
-//   WiFi.begin(ssid, password);
-//   while (WiFi.status() != WL_CONNECTED) {
-//     vTaskDelay(1000 / portTICK_PERIOD_MS);
-//     Serial.println("Connecting to WiFi..");
-//   }
-
-//   // Print ESP32 Local IP Address
-//   Serial.println(WiFi.localIP());
-//   vTaskDelete(NULL);  // Delete the task when done
-// }
-
-// // Task to handle server
-// void serverTask(void *pvParameters) {
-//   // Initialize SPIFFS
-//   if(!SPIFFS.begin(true)){
-//     Serial.println("An Error has occurred while mounting SPIFFS");
-//     vTaskDelete(NULL);  // Delete the task if SPIFFS initialization fails
-//   }
-
-//   // Route for root / web page
-//   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-//     request->send(SPIFFS, "/index.html", String(), false, processor);
-//   });
-
-//   // Route to load style.css file
-//   server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request){
-//     request->send(SPIFFS, "/style.css", "text/css");
-//   });
-
-//   // Route to set GPIO to HIGH
-//   server.on("/on", HTTP_GET, [](AsyncWebServerRequest *request){
-//     digitalWrite(ledPin, HIGH);
-//     request->send(SPIFFS, "/index.html", String(), false, processor);
-//   });
-
-//   // Route to set GPIO to LOW
-//   server.on("/off", HTTP_GET, [](AsyncWebServerRequest *request){
-//     digitalWrite(ledPin, LOW);
-//     request->send(SPIFFS, "/index.html", String(), false, processor);
-//   });
-
-//   // Start server
-//   server.begin();
-//   vTaskDelete(NULL);  // Delete the task when done
-// }
-
-// void setup(){
-//   Serial.begin(115200);
-//   pinMode(ledPin, OUTPUT);
-
-//   // Create tasks for Wi-Fi and server
-//   xTaskCreate(wifiTask, "WiFiTask", 4096, NULL, 1, NULL);
-//   xTaskCreate(serverTask, "ServerTask", 8192, NULL, 1, NULL);
-// }
-
-// void loop(){
-//   // Nothing to do here, FreeRTOS tasks handle the work
-//   Serial.println("Hello World");
-
-//   // Bật LED
-//   digitalWrite(ledPin, HIGH);
-//   delay(500);  // Giữ LED sáng 500ms
-
-//   // Tắt LED
-//   digitalWrite(ledPin, LOW);
-//   delay(500);  // Giữ LED tắt 500ms
-// }
-//==================================// gửi nhiệt độ độ ẩm lên web
-
 //=================================//
-// Bat tat LED va gui dataa len coreIOT thanh cong
+// Bat tat LED va gui data len coreIOT thanh cong
 // #include <WiFi.h>
 // #include <PubSubClient.h>
 // #include <Wire.h>
@@ -352,7 +450,7 @@
 //===================================
 
 //=================================//
-
+// Test freertos với MQTT và gửi dữ liệu lên ThingsBoard
 //============
 
 // #include <WiFi.h>
@@ -514,347 +612,4 @@
 //     // FreeRTOS handles tasks, so no need for code here
 // }
 
-// #include <WiFi.h>
-// #include <Wire.h>
-// #include <PubSubClient.h>
-// #include <ArduinoJson.h>
-// #include "DHT20.h"
-
-// const char *ssid = "viet";
-// const char *password = "20252025";
-
-// const char *mqttServer = "app.coreiot.io";
-// const int mqttPort = 1883;
-// const char *ACCESS_TOKEN = "gB69jhkhOWD1wEYj6mm7"; // Token của thiết bị
-
-// WiFiClient espClient;
-// PubSubClient client(espClient);
-
-// // Chân Analog MQ2 (AO)
-// #define MQ2_AO_PIN 1
-// DHT20 dht20;
-
-// unsigned long lastTelemetryTime = 0;
-// unsigned long lastMQ2Time = 0;
-// const long telemetryInterval = 5000; // Gửi dữ liệu mỗi 5 giây
-// const long MQ2Interval = 5000;       // Gửi dữ liệu MQ2 mỗi 5 giây
-
-// // Kết nối WiFi
-// void connectWiFi()
-// {
-//     Serial.print("Connecting to WiFi...");
-//     WiFi.begin(ssid, password);
-//     while (WiFi.status() != WL_CONNECTED)
-//     {
-//         Serial.print(".");
-//         delay(1000);
-//     }
-//     Serial.println("\nWiFi connected: " + WiFi.localIP().toString());
-// }
-
-// // Kết nối lại MQTT
-// void reconnectMQTT()
-// {
-//     while (!client.connected())
-//     {
-//         Serial.print("Connecting to MQTT...");
-//         if (client.connect("ESP32_MQ2", ACCESS_TOKEN, ""))
-//         {
-//             Serial.println("Connected to ThingsBoard!");
-//         }
-//         else
-//         {
-//             Serial.print("Failed, rc=");
-//             Serial.print(client.state());
-//             Serial.println(" retrying in 5 seconds...");
-//             delay(5000);
-//         }
-//     }
-// }
-
-// // Gửi dữ liệu MQ2
-// void sendMQ2Data()
-// {
-//     unsigned long currentMillis = millis();
-//     if (currentMillis - lastMQ2Time >= MQ2Interval)
-//     {
-//         lastMQ2Time = currentMillis;
-
-//         int gasAnalogValue = analogRead(MQ2_AO_PIN);
-//         Serial.println(gasAnalogValue);
-
-//         StaticJsonDocument<128> doc;
-//         doc["mq2_analog"] = gasAnalogValue;
-
-//         char buffer[128];
-//         serializeJson(doc, buffer);
-
-//         if (client.connected())
-//         {
-//             client.publish("v1/devices/me/telemetry", buffer);
-//             Serial.println("Sent MQ2 data: " + String(buffer));
-//         }
-//         else
-//         {
-//             Serial.println("MQTT not connected, cannot send MQ2 data!");
-//         }
-//     }
-// }
-// float temperature = 30;
-// float humidity = 50;
-// // Gửi telemetry từ DHT20
-// void sendTelemetry()
-// {
-//     dht20.begin();
-//     unsigned long currentMillis = millis();
-//     if (currentMillis - lastTelemetryTime >= telemetryInterval)
-//     {
-//         lastTelemetryTime = currentMillis;
-
-//         if (dht20.read())
-//         {
-//             // float temperature = dht20.getTemperature();
-//             // float humidity = dht20.getHumidity();
-
-//             Serial.println(temperature);
-//             Serial.println(humidity);
-//             StaticJsonDocument<128> doc;
-//             doc["temperature"] = temperature;
-//             doc["humidity"] = humidity;
-
-//             char buffer[128];
-//             serializeJson(doc, buffer);
-
-//             if (client.connected())
-//             {
-//                 client.publish("v1/devices/me/telemetry", buffer);
-//                 Serial.println("Sent telemetry: " + String(buffer));
-//             }
-//             else
-//             {
-//                 Serial.println("MQTT not connected, cannot send telemetry data!");
-//             }
-//         }
-//         else
-//         {
-//             Serial.println("Failed to read DHT20 sensor!");
-//         }
-//         temperature++;
-//         humidity++;
-//     }
-// }
-
-// void setup()
-// {
-//     Serial.begin(115200);
-
-//     pinMode(MQ2_AO_PIN, INPUT);
-
-//     connectWiFi();
-//     client.setServer(mqttServer, mqttPort);
-// }
-
-// void loop()
-// {
-//     if (!client.connected())
-//     {
-//         reconnectMQTT();
-//     }
-//     client.loop();
-
-//     sendMQ2Data();
-//     sendTelemetry();
-// }
-
 //======================================
-#include <WiFi.h>
-#include <Wire.h>
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include "DHT20.h"
-
-// WiFi Credentials
-const char *ssid = "viet";
-const char *password = "20252025";
-
-// ThingsBoard MQTT Broker
-const char *mqttServer = "app.coreiot.io";
-const int mqttPort = 1883;
-const char *ACCESS_TOKEN = "gB69jhkhOWD1wEYj6mm7";
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-// Cảm biến
-DHT20 dht20;
-#define MQ2_AO_PIN 34 // ⚠️ Đổi từ pin 1 sang pin analog an toàn hơn
-
-// Thời gian gửi
-const long telemetryInterval = 5000;
-const long mq2Interval = 5000;
-SemaphoreHandle_t i2cMutex;
-// Task handles
-TaskHandle_t WiFiTaskHandle = NULL;
-TaskHandle_t MQTTaskHandle = NULL;
-TaskHandle_t MQ2TaskHandle = NULL;
-TaskHandle_t TelemetryTaskHandle = NULL;
-
-// 🛰 WiFi Task: Kiểm tra & reconnect nếu rớt mạng
-void checkWiFiTask(void *pvParameters)
-{
-    for (;;)
-    {
-        if (WiFi.status() != WL_CONNECTED)
-        {
-            Serial.println("❌ WiFi disconnected! Reconnecting...");
-            WiFi.begin(ssid, password);
-
-            unsigned long start = millis();
-            while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
-            {
-                delay(500);
-                Serial.print(".");
-            }
-
-            if (WiFi.status() == WL_CONNECTED)
-            {
-                Serial.print("\n✅ WiFi connected: ");
-                Serial.println(WiFi.localIP());
-            }
-            else
-            {
-                Serial.println("\n⚠️ WiFi reconnect failed.");
-            }
-        }
-        else
-        {
-            Serial.println("✅ WiFi OK");
-        }
-
-        vTaskDelay(10000 / portTICK_PERIOD_MS); // Kiểm tra mỗi 10 giây
-    }
-}
-
-// 🌐 MQTT Task
-void reconnectMQTT()
-{
-    while (!client.connected())
-    {
-        Serial.print("🔄 Connecting to MQTT...");
-        if (client.connect("ESP32", ACCESS_TOKEN, ""))
-        {
-            Serial.println("✅ MQTT Connected to ThingsBoard");
-        }
-        else
-        {
-            Serial.print("❌ Failed, rc=");
-            Serial.print(client.state());
-            Serial.println(" → retry in 5s");
-            vTaskDelay(5000 / portTICK_PERIOD_MS);
-        }
-    }
-}
-
-void MQTTask(void *pvParameters)
-{
-    for (;;)
-    {
-        if (!client.connected())
-        {
-            reconnectMQTT();
-        }
-        client.loop();
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
-}
-
-// 🌡 Task gửi DHT20 telemetry
-void sendTelemetry(void *pvParameters)
-{
-    dht20.begin();
-
-    for (;;)
-    {
-        if (WiFi.status() == WL_CONNECTED && client.connected())
-        {
-            // 🔒 Lấy quyền truy cập I2C
-            if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(100)) == pdTRUE)
-            {
-                bool ok = dht20.read();
-                if (!ok)
-                {
-                    float temp = dht20.getTemperature();
-                    float hum = dht20.getHumidity();
-
-                    StaticJsonDocument<128> doc;
-                    doc["temperature"] = temp;
-                    doc["humidity"] = hum;
-
-                    char buffer[128];
-                    serializeJson(doc, buffer);
-
-                    client.publish("v1/devices/me/telemetry", buffer);
-                    Serial.println("📤 Sent DHT20: " + String(buffer));
-                }
-                else
-                {
-                    Serial.println("⚠️ DHT20 read failed");
-                }
-
-                // 🔓 Trả quyền lại
-                xSemaphoreGive(i2cMutex);
-            }
-            else
-            {
-                Serial.println("⏳ I2C busy, skip DHT20 read");
-            }
-        }
-
-        vTaskDelay(telemetryInterval / portTICK_PERIOD_MS);
-    }
-}
-
-// 🧪 Task gửi MQ2 telemetry
-void sendMQ2Data(void *pvParameters)
-{
-    for (;;)
-    {
-        if (WiFi.status() == WL_CONNECTED && client.connected())
-        {
-            int mq2Value = analogRead(MQ2_AO_PIN);
-            StaticJsonDocument<128> doc;
-            doc["mq2_analog"] = mq2Value;
-
-            char buffer[128];
-            serializeJson(doc, buffer);
-            client.publish("v1/devices/me/telemetry", buffer);
-
-            Serial.println("📤 Sent MQ2: " + String(buffer));
-        }
-
-        vTaskDelay(mq2Interval / portTICK_PERIOD_MS);
-    }
-}
-
-// 🛠 setup()
-void setup()
-{
-    Serial.begin(115200);
-    delay(1000);
-    Wire.begin();
-    i2cMutex = xSemaphoreCreateMutex();
-    pinMode(MQ2_AO_PIN, INPUT);
-    WiFi.begin(ssid, password);
-    client.setServer(mqttServer, mqttPort);
-
-    // ✅ Tạo task FreeRTOS
-    xTaskCreate(checkWiFiTask, "WiFiTask", 4096, NULL, 1, &WiFiTaskHandle);
-    xTaskCreate(MQTTask, "MQTTask", 4096, NULL, 1, &MQTTaskHandle);
-    xTaskCreate(sendTelemetry, "TelemetryTask", 4096, NULL, 1, &TelemetryTaskHandle);
-    xTaskCreate(sendMQ2Data, "MQ2Task", 4096, NULL, 1, &MQ2TaskHandle);
-}
-
-// loop bỏ trống
-void loop() {}
