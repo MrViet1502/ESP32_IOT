@@ -20,7 +20,7 @@ PubSubClient client(espClient);
 
 // Cảm biến
 DHT20 dht20;
-#define MQ2_AO_PIN 34 // ⚠️ Đổi từ pin 1 sang pin analog an toàn hơn
+#define MQ2_AO_PIN 34 //  Đổi từ pin 1 sang pin analog an toàn hơn
 
 // Thời gian gửi
 const long telemetryInterval = 5000;
@@ -31,36 +31,6 @@ TaskHandle_t WiFiTaskHandle = NULL;
 TaskHandle_t MQTTaskHandle = NULL;
 TaskHandle_t MQ2TaskHandle = NULL;
 TaskHandle_t TelemetryTaskHandle = NULL;
-
-// void callback(char *topic, byte *payload, unsigned int length)
-// {
-//     Serial.print("📩 Received MQTT: ");
-//     payload[length] = '\0';
-//     Serial.println((char *)payload);
-
-//     StaticJsonDocument<256> doc;
-//     DeserializationError error = deserializeJson(doc, payload);
-//     if (error)
-//     {
-//         Serial.print("❌ JSON parse failed: ");
-//         Serial.println(error.c_str());
-//         return;
-//     }
-
-//     if (doc["method"] == "setLed") // RPC method name bạn cấu hình trong ThingsBoard
-//     {
-//         bool ledState = doc["params"];
-//         digitalWrite(LED_PIN, ledState ? HIGH : LOW);
-//         Serial.println(ledState ? "💡 LED ON" : "🌑 LED OFF");
-
-//         // Gửi trạng thái LED về ThingsBoard
-//         StaticJsonDocument<128> response;
-//         response["led_state"] = ledState;
-//         char buffer[128];
-//         serializeJson(response, buffer);
-//         client.publish("v1/devices/me/attributes", buffer);
-//     }
-// }
 
 void callback(char *topic, byte *payload, unsigned int length)
 {
@@ -102,7 +72,7 @@ void checkWiFiTask(void *pvParameters)
     {
         if (WiFi.status() != WL_CONNECTED)
         {
-            Serial.println("❌ WiFi disconnected! Reconnecting...");
+            Serial.println(" WiFi disconnected! Reconnecting...");
             WiFi.begin(ssid, password);
 
             unsigned long start = millis();
@@ -114,38 +84,38 @@ void checkWiFiTask(void *pvParameters)
 
             if (WiFi.status() == WL_CONNECTED)
             {
-                Serial.print("\n✅ WiFi connected: ");
+                Serial.print("\n WiFi connected: ");
                 Serial.println(WiFi.localIP());
             }
             else
             {
-                Serial.println("\n⚠️ WiFi reconnect failed.");
+                Serial.println("\n WiFi reconnect failed.");
             }
         }
         else
         {
-            Serial.println("✅ WiFi OK");
+            Serial.println(" WiFi OK");
         }
 
         vTaskDelay(10000 / portTICK_PERIOD_MS); // Kiểm tra mỗi 10 giây
     }
 }
 
-// 🌐 MQTT Task
+//  MQTT Task
 void reconnectMQTT()
 {
     while (!client.connected())
     {
-        Serial.print("🔄 Connecting to MQTT...");
+        Serial.print(" Connecting to MQTT...");
         if (client.connect("ESP32", ACCESS_TOKEN, ""))
         {
-            Serial.println("✅ MQTT Connected to ThingsBoard");
+            Serial.println(" MQTT Connected to ThingsBoard");
             client.subscribe("v1/devices/me/rpc/request/+");
             client.setCallback(callback);
         }
         else
         {
-            Serial.print("❌ Failed, rc=");
+            Serial.print(" Failed, rc=");
             Serial.print(client.state());
             Serial.println(" → retry in 5s");
             vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -175,7 +145,7 @@ void sendTelemetry(void *pvParameters)
     {
         if (WiFi.status() == WL_CONNECTED && client.connected())
         {
-            // 🔒 Lấy quyền truy cập I2C
+            //  Lấy quyền truy cập I2C
             if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(100)) == pdTRUE)
             {
                 bool ok = dht20.read();
@@ -192,19 +162,19 @@ void sendTelemetry(void *pvParameters)
                     serializeJson(doc, buffer);
 
                     client.publish("v1/devices/me/telemetry", buffer);
-                    Serial.println("📤 Sent DHT20: " + String(buffer));
+                    Serial.println(" Sent DHT20: " + String(buffer));
                 }
                 else
                 {
-                    Serial.println("⚠️ DHT20 read failed");
+                    Serial.println(" DHT20 read failed");
                 }
 
-                // 🔓 Trả quyền lại
+                //  Trả quyền lại
                 xSemaphoreGive(i2cMutex);
             }
             else
             {
-                Serial.println("⏳ I2C busy, skip DHT20 read");
+                Serial.println(" I2C busy, skip DHT20 read");
             }
         }
 
@@ -227,7 +197,7 @@ void sendMQ2Data(void *pvParameters)
             serializeJson(doc, buffer);
             client.publish("v1/devices/me/telemetry", buffer);
 
-            Serial.println("📤 Sent MQ2: " + String(buffer));
+            Serial.println(" Sent MQ2: " + String(buffer));
         }
 
         vTaskDelay(mq2Interval / portTICK_PERIOD_MS);
@@ -247,7 +217,7 @@ void setup()
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);
     client.setCallback(callback);
-    // ✅ Tạo task FreeRTOS
+    //  Tạo task FreeRTOS
     xTaskCreate(checkWiFiTask, "WiFiTask", 4096, NULL, 1, &WiFiTaskHandle);
     xTaskCreate(MQTTask, "MQTTask", 4096, NULL, 1, &MQTTaskHandle);
     xTaskCreate(sendTelemetry, "TelemetryTask", 4096, NULL, 1, &TelemetryTaskHandle);
