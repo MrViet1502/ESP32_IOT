@@ -1,3 +1,5 @@
+// Code freeRTOS controler LED & DHT20 + MQ2 sensor send to CoreIOT
+
 #include <WiFi.h>
 #include <Wire.h>
 #include <PubSubClient.h>
