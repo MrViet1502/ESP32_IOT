@@ -11,7 +11,7 @@
 // WiFi Credentials
 const char *ssid = "viet";
 const char *password = "20252025";
-#define LED_PIN 13
+#define LED_PIN 12
 // ThingsBoard MQTT Broker
 const char *mqttServer = "app.coreiot.io";
 const int mqttPort = 1883;
