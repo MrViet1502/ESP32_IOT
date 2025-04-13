@@ -1,5 +1,5 @@
 
-// Code FreeRTOS Controller LED & DHT20 + MQ2 sensor send to CoreIOT (sửa để dùng shared attribute bật LED)
+// Code FreeRTOS Controller LED & DHT20 + MQ2 sensor send to CoreIOT and OTA update
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -26,8 +26,8 @@ const char *ACCESS_TOKEN = "gB69jhkhOWD1wEYj6mm7";
 WiFiClient espClient;
 PubSubClient client(espClient);
 String firmwareURL = "";             // URL cập nhật firmware
-bool otaTriggered = false;           // Biến để kiểm tra xem có cần cập nhật firmware không
-volatile bool otaInProgress = false; // Biến để kiểm tra xem có đang cập nhật firmware không
+bool otaTriggered = false;           //
+volatile bool otaInProgress = false; //
 // Cảm biến
 DHT20 dht20;
 #define MQ2_AO_PIN 34 // Analog input cho MQ2
@@ -336,8 +336,10 @@ void setup()
 }
 
 void loop() {}
+
 //===================================//
 //===================================//
+
 // digitalWrite(LED_PIN, HIGH);
 //             vTaskDelay(100 / portTICK_PERIOD_MS); // sáng 100ms
 //             digitalWrite(LED_PIN, LOW);
