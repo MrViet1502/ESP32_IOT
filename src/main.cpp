@@ -1,4 +1,3 @@
-
 // Code FreeRTOS Controller LED & DHT20 + MQ2 sensor send to CoreIOT and OTA update
 #include <Arduino.h>
 #include <WiFi.h>
@@ -42,6 +41,15 @@ TaskHandle_t MQTTaskHandle = NULL;
 TaskHandle_t MQ2TaskHandle = NULL;
 TaskHandle_t TelemetryTaskHandle = NULL;
 TaskHandle_t OTAUpdateTaskHandle = NULL;
+void sendOTAStatus(String status)
+{
+    StaticJsonDocument<128> doc;
+    doc["ota_status"] = status;
+    char buffer[128];
+    serializeJson(doc, buffer);
+    client.publish("v1/devices/me/attributes", buffer);
+    Serial.println("[OTA] Status sent to ThingsBoard: " + status);
+}
 
 bool OTA_Update(String url)
 {
@@ -107,12 +115,14 @@ void RunOTA_Update(void *pvParameters)
             Serial.println("[OTA] Starting update from: " + firmwareURL);
             if (OTA_Update(firmwareURL))
             {
+                sendOTAStatus("OTA Update success");
                 Serial.println("[OTA] Update successful! Rebooting...");
                 vTaskDelay(2000 / portTICK_PERIOD_MS);
                 esp_restart();
             }
             else
             {
+                sendOTAStatus("OTA Update falsed");
                 Serial.println("[OTA] Update failed!");
             }
             otaTriggered = false;
