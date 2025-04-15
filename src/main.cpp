@@ -155,10 +155,10 @@ void callback(char *topic, byte *payload, unsigned int length)
     {
         if (doc.containsKey(LED_STATE_ATTR))
         {
-            bool ledState = doc[LED_STATE_ATTR];
-            digitalWrite(LED_PIN, ledState ? HIGH : LOW);
-            Serial.print("LED state set from Shared Attribute: ");
-            Serial.println(ledState);
+            // bool ledState = doc[LED_STATE_ATTR];
+            // digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+            // Serial.print("LED state set from Shared Attribute: ");
+            // Serial.println(ledState);
         }
         if (doc.containsKey(OTA_Key))
         {
@@ -174,14 +174,14 @@ void callback(char *topic, byte *payload, unsigned int length)
         if (doc["method"] == "setValue")
         {
             bool ledState = doc["params"];
-            digitalWrite(LED_PIN, ledState ? HIGH : LOW);
-            Serial.println(ledState ? "LED ON via RPC" : "LED OFF via RPC");
+            // digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+            // Serial.println(ledState ? "LED ON via RPC" : "LED OFF via RPC");
 
-            StaticJsonDocument<128> response;
-            response["value"] = ledState;
-            char buffer[128];
-            serializeJson(response, buffer);
-            client.publish("v1/devices/me/attributes", buffer);
+            // StaticJsonDocument<128> response;
+            // response["value"] = ledState;
+            // char buffer[128];
+            // serializeJson(response, buffer);
+            // client.publish("v1/devices/me/attributes", buffer);
         }
     }
 }
@@ -321,6 +321,9 @@ void sendMQ2Data(void *pvParameters)
             serializeJson(doc, buffer);
             client.publish("v1/devices/me/telemetry", buffer);
             Serial.println(" Sent MQ2: " + String(buffer));
+            digitalWrite(LED_PIN, HIGH);
+            vTaskDelay(100 / portTICK_PERIOD_MS); // LED sáng 100ms
+            digitalWrite(LED_PIN, LOW);
         }
         vTaskDelay(mq2Interval / portTICK_PERIOD_MS);
     }
